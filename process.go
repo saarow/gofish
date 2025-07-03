@@ -110,9 +110,6 @@ func (p *Process) Close() error {
 }
 
 func (p *Process) closePipes() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if p.stdin != nil {
 		p.stdin.Close()
 	}
