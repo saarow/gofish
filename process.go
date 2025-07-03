@@ -15,16 +15,17 @@ type Process struct {
 	stdout io.ReadCloser
 	stderr io.ReadCloser
 
-	mu     sync.Mutex
-	closed bool
+	enginePath string
+	mu         sync.Mutex
+	closed     bool
 }
 
-func NewProcess(enginePath string) (*Process, error) {
-	if enginePath == "" {
+func NewProcess(path string) (*Process, error) {
+	if path == "" {
 		return nil, fmt.Errorf("engine path cannot be empty")
 	}
 
-	cmd := exec.Command(enginePath)
+	cmd := exec.Command(path)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -46,39 +47,29 @@ func NewProcess(enginePath string) (*Process, error) {
 		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	if err := cmd.Start(); err != nil {
-		stdin.Close()
-		stdout.Close()
-		stderr.Close()
+	return &Process{
+		cmd:        cmd,
+		stdin:      stdin,
+		stdout:     stdout,
+		stderr:     stderr,
+		enginePath: path,
+	}, nil
+}
 
-		return nil, fmt.Errorf(
+func (p *Process) Start() error {
+	if err := p.cmd.Start(); err != nil {
+		p.stdin.Close()
+		p.stdout.Close()
+		p.stderr.Close()
+
+		return fmt.Errorf(
 			"failed to start the engine '%s': %w",
-			enginePath,
+			p.enginePath,
 			err,
 		)
 	}
 
-	return &Process{
-		cmd:    cmd,
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
-	}, nil
-}
-
-func (p *Process) closePipes() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.stdin != nil {
-		p.stdin.Close()
-	}
-	if p.stdout != nil {
-		p.stdout.Close()
-	}
-	if p.stderr != nil {
-		p.stderr.Close()
-	}
+	return nil
 }
 
 func (p *Process) Close() error {
@@ -116,4 +107,19 @@ func (p *Process) Close() error {
 
 	p.closePipes()
 	return err
+}
+
+func (p *Process) closePipes() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.stdin != nil {
+		p.stdin.Close()
+	}
+	if p.stdout != nil {
+		p.stdout.Close()
+	}
+	if p.stderr != nil {
+		p.stderr.Close()
+	}
 }
