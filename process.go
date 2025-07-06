@@ -2,8 +2,11 @@
 package gofish
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -17,7 +20,10 @@ type Process struct {
 
 	enginePath string
 	mu         sync.Mutex
-	closed     bool
+	isClosed   bool
+
+	outputCh chan string
+	errorCh  chan error
 }
 
 func NewProcess(path string) (*Process, error) {
@@ -53,15 +59,14 @@ func NewProcess(path string) (*Process, error) {
 		stdout:     stdout,
 		stderr:     stderr,
 		enginePath: path,
+		outputCh:   make(chan string),
+		errorCh:    make(chan error),
 	}, nil
 }
 
 func (p *Process) Start() error {
 	if err := p.cmd.Start(); err != nil {
-		p.stdin.Close()
-		p.stdout.Close()
-		p.stderr.Close()
-
+		p.cleanupResources()
 		return fmt.Errorf(
 			"failed to start the engine '%s': %w",
 			p.enginePath,
@@ -76,40 +81,61 @@ func (p *Process) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.closed {
+	if p.isClosed {
 		return nil
 	}
-	p.closed = true
 
-	if p.stdin != nil {
-		fmt.Fprintln(p.stdin, "quit")
-	}
-
-	var err error
-	if p.cmd != nil {
-		done := make(chan error, 1)
+	p.Write("quit")
+	done := make(chan error, 1)
+	go func() {
 		defer close(done)
-		go func() {
-			done <- p.cmd.Wait()
-		}()
+		done <- p.cmd.Wait()
+	}()
 
-		select {
-		case err = <-done:
-		case <-time.After(3 * time.Second):
-			if p.cmd.Process != nil {
-				_ = p.cmd.Process.Kill()
-			}
-			err = fmt.Errorf(
-				"engine did not respond to quit command, force killed",
+	var mainErr error
+	select {
+	case err := <-done:
+		if err != nil {
+			mainErr = fmt.Errorf(
+				"engine exited with an error during shutdown: %w",
+				err,
 			)
 		}
+
+	case <-time.After(3 * time.Second):
+		if p.cmd.Process != nil {
+			_ = p.cmd.Process.Kill()
+		}
+		mainErr = fmt.Errorf(
+			"engine did not respond to quit command, force killed",
+		)
 	}
 
-	p.closePipes()
-	return err
+	p.isClosed = true
+	p.cleanupResources()
+	return mainErr
 }
 
-func (p *Process) closePipes() {
+func (p *Process) Write(command string) error {
+	if !p.isClosed {
+		_, err := fmt.Fprintln(p.stdin, command)
+		return err
+	}
+	return fmt.Errorf("either stdin pipe or process is closed")
+}
+
+func (p *Process) Read() {
+	scanner := bufio.NewScanner(p.stdout)
+
+	for scanner.Scan() {
+		p.outputCh <- scanner.Text()
+	}
+	if err := scanner.Err(); err != nil && !errors.Is(err, os.ErrClosed) {
+		p.errorCh <- err
+	}
+}
+
+func (p *Process) cleanupResources() {
 	if p.stdin != nil {
 		p.stdin.Close()
 	}
@@ -119,4 +145,7 @@ func (p *Process) closePipes() {
 	if p.stderr != nil {
 		p.stderr.Close()
 	}
+
+	close(p.outputCh)
+	close(p.errorCh)
 }
