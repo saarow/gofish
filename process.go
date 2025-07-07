@@ -1,4 +1,5 @@
 // Package gofish
+// TODO: stockfish (in UCI mode) does not use stderr, remove it?
 package gofish
 
 import (
