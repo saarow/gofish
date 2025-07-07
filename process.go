@@ -2,11 +2,8 @@
 package gofish
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -21,9 +18,6 @@ type Process struct {
 	enginePath string
 	mu         sync.Mutex
 	isClosed   bool
-
-	outputCh chan string
-	errorCh  chan error
 }
 
 func NewProcess(path string) (*Process, error) {
@@ -59,8 +53,6 @@ func NewProcess(path string) (*Process, error) {
 		stdout:     stdout,
 		stderr:     stderr,
 		enginePath: path,
-		outputCh:   make(chan string),
-		errorCh:    make(chan error),
 	}, nil
 }
 
@@ -85,7 +77,7 @@ func (p *Process) Close() error {
 		return nil
 	}
 
-	p.Write("quit")
+	fmt.Fprintln(p.stdin, "quit")
 	done := make(chan error, 1)
 	go func() {
 		defer close(done)
@@ -111,28 +103,9 @@ func (p *Process) Close() error {
 		)
 	}
 
-	p.isClosed = true
 	p.cleanupResources()
+	p.isClosed = true
 	return mainErr
-}
-
-func (p *Process) Write(command string) error {
-	if !p.isClosed {
-		_, err := fmt.Fprintln(p.stdin, command)
-		return err
-	}
-	return fmt.Errorf("either stdin pipe or process is closed")
-}
-
-func (p *Process) Read() {
-	scanner := bufio.NewScanner(p.stdout)
-
-	for scanner.Scan() {
-		p.outputCh <- scanner.Text()
-	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, os.ErrClosed) {
-		p.errorCh <- err
-	}
 }
 
 func (p *Process) cleanupResources() {
@@ -145,7 +118,4 @@ func (p *Process) cleanupResources() {
 	if p.stderr != nil {
 		p.stderr.Close()
 	}
-
-	close(p.outputCh)
-	close(p.errorCh)
 }
