@@ -57,8 +57,9 @@ func (e *Engine) Run() error {
 	return nil
 }
 
-func (e *Engine) SendCommand(command string) {
-	fmt.Fprintln(e.Proc.stdin, command)
+func (e *Engine) SendCommand(command string, args ...any) {
+	formattedCmd := fmt.Sprintf(command, args...)
+	fmt.Fprintln(e.Proc.stdin, formattedCmd)
 }
 
 func (e *Engine) ReadOutput() {
@@ -101,6 +102,8 @@ func (e *Engine) SetOption(name string, value any) error {
 
 		}
 		e.Opts.MultiPV = mulitpv
+		e.SendCommand("setoption name MultiPV value %d",
+			e.Opts.MultiPV)
 
 	default:
 		return fmt.Errorf("invalid option '%s'", name)
