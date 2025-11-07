@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -66,12 +67,19 @@ func (e *Engine) ReadOutput() {
 	scanner := bufio.NewScanner(e.Proc.stdout)
 
 	for scanner.Scan() {
-		e.OutputChan <- scanner.Text()
+		select {
+		case e.OutputChan <- scanner.Text():
+		case <-e.Ctx.Done():
+			return
+		}
 	}
 
-	if err := scanner.Err(); err != nil && !errors.Is(err, os.ErrClosed) {
-		// TODO: error handling
-		return
+	if err := scanner.Err(); err != nil {
+		if errors.Is(err, os.ErrClosed) ||
+			errors.Is(err, io.EOF) {
+			return
+		}
+		fmt.Printf("UCI engine communication failure: %v\n", err)
 	}
 }
 
