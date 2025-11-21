@@ -9,18 +9,18 @@ import (
 	"time"
 )
 
-type Process struct {
+type process struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
 	stderr io.ReadCloser
 
-	enginePath string
-	mu         sync.Mutex
-	isClosed   bool
+	path     string
+	mu       sync.Mutex
+	isClosed bool
 }
 
-func NewProcess(path string) (*Process, error) {
+func newProcess(path string) (*process, error) {
 	if path == "" {
 		return nil, fmt.Errorf("engine path cannot be empty")
 	}
@@ -56,16 +56,16 @@ func NewProcess(path string) (*Process, error) {
 		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	return &Process{
-		cmd:        cmd,
-		stdin:      stdin,
-		stdout:     stdout,
-		stderr:     stderr,
-		enginePath: path,
+	return &process{
+		cmd:    cmd,
+		stdin:  stdin,
+		stdout: stdout,
+		stderr: stderr,
+		path:   path,
 	}, nil
 }
 
-func (p *Process) Start() error {
+func (p *process) start() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -73,7 +73,7 @@ func (p *Process) Start() error {
 		p.cleanupResources()
 		return fmt.Errorf(
 			"failed to start the engine '%s': %w",
-			p.enginePath,
+			p.path,
 			err,
 		)
 	}
@@ -81,7 +81,7 @@ func (p *Process) Start() error {
 	return nil
 }
 
-func (p *Process) Close() error {
+func (p *process) close() error {
 	p.mu.Lock()
 	if p.isClosed {
 		p.mu.Unlock()
@@ -120,7 +120,7 @@ func (p *Process) Close() error {
 	return mainErr
 }
 
-func (p *Process) cleanupResources() {
+func (p *process) cleanupResources() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

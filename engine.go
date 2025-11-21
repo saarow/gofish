@@ -11,7 +11,7 @@ import (
 
 type Engine struct {
 	Path   string
-	Proc   *Process
+	Proc   *process
 	Ctx    context.Context
 	Cancel context.CancelFunc
 	Opts   EngineOptions
@@ -25,7 +25,7 @@ type EngineOptions struct {
 }
 
 func NewEngine(enginePath string) (*Engine, error) {
-	proc, err := NewProcess(enginePath)
+	proc, err := newProcess(enginePath)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func NewEngine(enginePath string) (*Engine, error) {
 }
 
 func (e *Engine) Run() error {
-	if err := e.Proc.Start(); err != nil {
+	if err := e.Proc.start(); err != nil {
 		return err
 	}
 
